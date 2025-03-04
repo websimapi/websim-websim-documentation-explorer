@@ -1,0 +1,532 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSim Documentation Explorer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        
+        h1, h2, h3 {
+            color: #1a73e8;
+            margin-top: 2em;
+        }
+        
+        h1 {
+            text-align: center;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        code {
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        
+        nav {
+            margin: 20px 0;
+            position: sticky;
+            top: 0;
+            background: white;
+            padding: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        
+        nav ul {
+            list-style-type: none;
+            padding: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        nav li a {
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            color: #1a73e8;
+            background: #e8f0fe;
+            display: inline-block;
+        }
+        
+        nav li a:hover {
+            background: #d2e3fc;
+        }
+        
+        .example {
+            background-color: #f8f9fa;
+            border-left: 4px solid #1a73e8;
+            padding: 10px 15px;
+            margin: 15px 0;
+        }
+        
+        .note {
+            background-color: #fff8e1;
+            border-left: 4px solid #ffb300;
+            padding: 10px 15px;
+            margin: 15px 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #f2f2f2;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f5f5f5;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSim Documentation Explorer</h1>
+    
+    <nav>
+        <ul>
+            <li><a href="#websocket">WebSocket Connection</a></li>
+            <li><a href="#peers">Peers & Clients</a></li>
+            <li><a href="#events">Events</a></li>
+            <li><a href="#records">Persistent Records</a></li>
+            <li><a href="#file-upload">File Upload</a></li>
+            <li><a href="#llm">LLM Integration</a></li>
+            <li><a href="#api">API Access</a></li>
+        </ul>
+    </nav>
+    
+    <section id="introduction" class="section">
+        <h2>Introduction</h2>
+        <p>This interactive documentation explains the WebSim multiplayer capabilities, providing details about WebSocket connections, peer management, messaging, and persistent data storage. This guide will help you understand how to build real-time collaborative experiences.</p>
+    </section>
+    
+    <section id="websocket" class="section">
+        <h2>WebSocket Connection</h2>
+        <p>The WebsimSocket is the foundation for multiplayer functionality:</p>
+        
+        <pre><code>// Connect to the WebSocket server
+const room = new WebsimSocket();</code></pre>
+        
+        <p class="note">The connection is automatically established when you create a new WebsimSocket instance.</p>
+    </section>
+    
+    <section id="peers" class="section">
+        <h2>Peers & Clients</h2>
+        
+        <h3>Client Information</h3>
+        <pre><code>// Access current client's information
+let clientId = room.party.client.id;
+let username = room.party.client.username;
+console.log(clientId, username);</code></pre>
+        
+        <div class="note">
+            <p>Client information is automatically handled by the library. You can use:</p>
+            <ul>
+                <li><code>client.id</code> for client-specific logic</li>
+                <li><code>client.username</code> for display purposes</li>
+            </ul>
+        </div>
+        
+        <h3>Connected Peers</h3>
+        <pre><code>// Access all connected peers (including yourself)
+for (const clientId in room.party.peers) {
+    const { username } = room.party.peers[clientId];
+    console.log(username);
+}
+
+// Subscribe to peer changes
+room.party.subscribe((peers) => {
+    for (const clientId in peers) {
+        const { username } = peers[clientId];
+        console.log(username);
+    }
+});</code></pre>
+        
+        <h3>React Integration</h3>
+        <pre><code>// React 18 integration with useSyncExternalStore
+const peers = React.useSyncExternalStore(
+    room.party.subscribe,
+    () => room.party.peers,
+);</code></pre>
+    </section>
+    
+    <section id="events" class="section">
+        <h2>Events</h2>
+        
+        <h3>Sending Events</h3>
+        <p>Events are ephemeral messages sent between connected clients:</p>
+        
+        <pre><code>// Send a custom event
+room.send({
+    type: "yourCustomEventType",
+    echo: true,  // Whether the sender receives the event (default: true)
+    // Additional event data
+    newX: 100,
+    newY: 100,
+    message: "Hello, world!",
+});</code></pre>
+        
+        <h3>Handling Events</h3>
+        <pre><code>// Handle incoming events
+room.onmessage = (event) => {
+    const data = event.data;
+    switch (data.type) {
+        // Built-in events
+        case "connected":
+            console.log(`Client ${data.clientId}, ${data.username}`);
+            break;
+        case "disconnected":
+            console.log(`Client ${data.clientId}, ${data.username}`);
+            break;
+            
+        // Custom events
+        case "yourCustomEventType":
+            console.log(`New position: (${data.newX}, ${data.newY})`);
+            console.log(`Message: ${data.message}`);
+            console.log(`Event sent by client: ${data.clientId}`);
+            console.log(`Event sent by username: ${data.username}`);
+            // Handle your custom event
+            break;
+            
+        default:
+            console.log("Received event:", data);
+    }
+};</code></pre>
+    </section>
+    
+    <section id="records" class="section">
+        <h2>Persistent Records</h2>
+        
+        <p>Unlike events, records are persistent and remain available even after clients disconnect.</p>
+        
+        <h3>Creating Records</h3>
+        <pre><code>// Create a new record
+let post = await room.collection('post').create({
+    message: "Hello, world!",
+});</code></pre>
+        
+        <div class="note">
+            <p>Records automatically include:</p>
+            <ul>
+                <li><code>id</code> - Unique identifier</li>
+                <li><code>username</code> - Creator's username</li>
+                <li><code>created_at</code> - UTC timestamp</li>
+            </ul>
+        </div>
+        
+        <h3>Retrieving Records</h3>
+        <pre><code>// Get all records of type "post"
+let posts = room.collection('post').getList();
+
+// Filter records by field value
+let filteredPosts = room.collection('post').filter({ parent_id: post.id }).getList();
+
+// Get only top-level posts
+let topPosts = room.collection('post').filter({ parent_id: null }).getList();</code></pre>
+        
+        <div class="note">
+            <p>Note: <code>getList()</code> always returns records sorted from newest to oldest.</p>
+        </div>
+        
+        <h3>Record Relationships</h3>
+        <pre><code>// Create related records
+let post = await room.collection('post').create({
+    message: "Hello, world!",
+});
+
+// Create an upvote related to the post
+let upvote = await room.collection('upvote').create({
+    post_id: post.id,
+});
+
+// Query all upvotes on a specific post
+let upvotes = room.collection('upvote').filter({ post_id: post.id }).getList();</code></pre>
+        
+        <h3>Updating & Deleting Records</h3>
+        <pre><code>// Update a record (can only update your own records)
+await room.collection('post').update(post.id, {
+    message: "Hello, world! (updated)",
+});
+
+// Delete a record (can only delete your own records)
+await room.collection('post').delete(post.id);</code></pre>
+        
+        <h3>Subscribing to Record Changes</h3>
+        <pre><code>// Subscribe to all posts
+room.collection('post').subscribe(function (posts) {
+    console.log(posts);
+});
+
+// Subscribe to filtered posts
+room.collection('post').filter({ parent_id: null }).subscribe(function (topLevelPosts) {
+    console.log(topLevelPosts);
+});
+
+// Unsubscribe when needed
+const unsubscribe = room.collection('post').subscribe(function (posts) {
+    console.log(posts);
+});
+unsubscribe();</code></pre>
+        
+        <h3>React Integration</h3>
+        <pre><code>// React 18 integration
+const messages = React.useSyncExternalStore(
+    room.collection('message').subscribe,
+    room.collection('message').getList
+);
+
+// With filtering
+const topMessages = React.useSyncExternalStore(
+    room.collection('message').filter({ parent_id: null }).subscribe,
+    room.collection('message').filter({ parent_id: null }).getList
+);</code></pre>
+        
+        <div class="note">
+            <p>For React 18 integration, include these script tags:</p>
+            <pre><code>&lt;script src="https://unpkg.com/react@18/umd/react.development.js"&gt;&lt;/script&gt;
+&lt;script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"&gt;&lt;/script&gt;
+&lt;script src="https://unpkg.com/@babel/standalone/babel.min.js"&gt;&lt;/script&gt;</code></pre>
+        </div>
+        
+        <h3>Finding Project Creator</h3>
+        <pre><code>// Get the username of the project creator
+let creatorUsername = (await window.websim.getCreatedBy()).username;</code></pre>
+    </section>
+    
+    <section id="file-upload" class="section">
+        <h2>File Upload</h2>
+        
+        <p>WebSim provides a simple way to upload files:</p>
+        
+        <pre><code>try {
+    // Upload file to S3 and get the URL
+    const url = await websim.upload(file);
+    console.log("File uploaded:", url);
+} catch (error) {
+    console.error('Error uploading file:', error);
+}</code></pre>
+    </section>
+    
+    <section id="llm" class="section">
+        <h2>LLM Integration</h2>
+        
+        <h3>Basic AI Chat</h3>
+        <pre><code>let conversationHistory = [];
+
+// Add user message
+const newMessage = {
+    role: "user",
+    content: "What is two plus two?",
+};
+conversationHistory.push(newMessage);
+
+// Only keep recent messages
+conversationHistory = conversationHistory.slice(-10);
+
+// Get AI response
+const completion = await websim.chat.completions.create({
+    messages: [
+        {
+            role: "system",
+            content: "You are a friendly assistant who speaks in rhyming verse.",
+        }, // system message is optional
+        ...conversationHistory,
+    ],
+});
+
+const response = completion.content;
+// Add response to history
+conversationHistory.push(completion);</code></pre>
+        
+        <h3>JSON Output</h3>
+        <pre><code>const completion = await websim.chat.completions.create({
+    messages: [
+        {
+            role: "system",
+            content: `Combine the following concepts into a single, coherent idea.
+Respond directly with JSON, following this JSON schema, and no other text.
+{
+  concept: string;
+  emoji: string;
+}
+`,
+        },
+        {
+            role: "user",
+            content: [
+                { type: "text", text: "eggs + fire" },
+            ],
+        },
+    ],
+    json: true,
+});
+
+const result = JSON.parse(completion.content);
+let concept = result.concept;
+let emoji = result.emoji;</code></pre>
+        
+        <h3>Image Input + JSON Output</h3>
+        <pre><code>const completion = await websim.chat.completions.create({
+    messages: [
+        {
+            role: "user",
+            content: [
+                {
+                    type: "text",
+                    text: `Determine if the image is a natural photograph of an animal.
+Respond directly with JSON, following this JSON schema, and no other text.
+{
+  isPhotograph: boolean;
+  isAnimal: boolean;
+  isInNature: boolean;
+}`,
+                },
+                {
+                    type: "image_url",
+                    image_url: { url: imageDataUrl },
+                },
+            ],
+        },
+    ],
+    json: true,
+});
+
+let result = JSON.parse(completion.content);
+let isPhotograph = result.isPhotograph;
+let isAnimal = result.isAnimal;
+let isInNature = result.isInNature;</code></pre>
+        
+        <h3>AI Image Generation</h3>
+        <pre><code>// Generate an image with default 1:1 aspect ratio
+const result = await websim.imageGen({
+    prompt: "A crayon child's drawing of a turtle",
+});
+
+// Generate with specific aspect ratio
+const wideResult = await websim.imageGen({
+    prompt: "A beautiful sunset over a calm ocean",
+    aspect_ratio: "16:9",
+});
+
+// Generate with specific dimensions
+const customResult = await websim.imageGen({
+    prompt: "A beautiful sunset over a calm ocean",
+    width: 1024,
+    height: 768,
+});
+
+// Use a seed for consistent variations
+const seededResult = await websim.imageGen({
+    prompt: "A beautiful sunset over a calm ocean",
+    seed: 4,
+});
+
+console.log(result.url); // URL to the generated image</code></pre>
+    </section>
+    
+    <section id="api" class="section">
+        <h2>API Access</h2>
+        
+        <p>WebSim provides API access to various data:</p>
+        
+        <h3>User Information</h3>
+        <pre><code>// Get current user
+const user = await window.websim.getUser();
+
+// Access user info
+const { id, username, avatar_url } = user;
+
+// Get user following
+const response = await fetch(`/api/v1/users/${username}/following`);
+const body = await response.json();
+for (const {follow} of body.following.data) {
+    // Process following data
+}</code></pre>
+        
+        <h3>Common URLs</h3>
+        <table>
+            <tr>
+                <th>Type</th>
+                <th>URL Pattern</th>
+            </tr>
+            <tr>
+                <td>Site Links</td>
+                <td><code>https://websim.ai/c/${site_id}</code></td>
+            </tr>
+            <tr>
+                <td>Project Links</td>
+                <td><code>https://websim.ai/p/${project_id}</code></td>
+            </tr>
+            <tr>
+                <td>Site Images</td>
+                <td><code>https://images.websim.ai/v1/site/${site.id}/600</code></td>
+            </tr>
+            <tr>
+                <td>User Avatars</td>
+                <td><code>https://images.websim.ai/avatar/${user.username}</code></td>
+            </tr>
+            <tr>
+                <td>User Profiles</td>
+                <td><code>https://websim.ai/@${user.username}</code></td>
+            </tr>
+        </table>
+        
+        <h3>Project Information</h3>
+        <pre><code>// Get current project
+const project = await window.websim.getCurrentProject();
+const { id, title, description } = project;</code></pre>
+    </section>
+    
+    <script>
+        // Add smooth scrolling for navigation links
+        document.querySelectorAll('nav a').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                const targetElement = document.querySelector(targetId);
+                
+                window.scrollTo({
+                    top: targetElement.offsetTop - 20,
+                    behavior: 'smooth'
+                });
+            });
+        });
+    </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
