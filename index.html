@@ -132,386 +132,1819 @@
     
     <section id="introduction" class="section">
         <h2>Introduction</h2>
-        <p>This interactive documentation explains the WebSim multiplayer capabilities, providing details about WebSocket connections, peer management, messaging, and persistent data storage. This guide will help you understand how to build real-time collaborative experiences.</p>
+        <p>This interactive documentation explains the WebSim multiplayer capabilities, providing comprehensive details about WebSocket connections, peer management, real-time messaging, and persistent data storage. This guide will help you understand how to build rich, real-time collaborative experiences with WebSim's powerful multiplayer features. Whether you're building a chat application, a collaborative editor, or a multiplayer game, this documentation will guide you through the process.</p>
+        <div class="note">
+            <p><strong>Recommended approach:</strong> Consider whether your application needs ephemeral events (for real-time updates) or persisted records (for data that needs to survive across sessions), or a combination of both. This will influence your architectural decisions.</p>
+        </div>
     </section>
-    
+
     <section id="websocket" class="section">
         <h2>WebSocket Connection</h2>
-        <p>The WebsimSocket is the foundation for multiplayer functionality:</p>
+        <p>The WebsimSocket is the foundation for all multiplayer functionality. It establishes and maintains a real-time connection to the WebSim server:</p>
         
         <pre><code>// Connect to the WebSocket server
 const room = new WebsimSocket();</code></pre>
         
-        <p class="note">The connection is automatically established when you create a new WebsimSocket instance.</p>
+        <p class="note">The connection is automatically established when you create a new WebsimSocket instance. You don't need to call any additional methods to open the connection.</p>
+        
+        <div class="example">
+            <p><strong>Example:</strong> Basic setup for a multiplayer application</p>
+            <pre><code>// Create a WebSocket connection
+const room = new WebsimSocket();
+
+// Log when connection is established
+room.onmessage = (event) => {
+    if (event.data.type === "connected") {
+        console.log(`Connected with client ID: ${event.data.clientId}`);
+    }
+};</code></pre>
+        </div>
+        
+        <p>Under the hood, WebsimSocket uses standard WebSocket technology but adds additional functionality for peer management, event handling, and persistent storage.</p>
     </section>
-    
+
     <section id="peers" class="section">
         <h2>Peers & Clients</h2>
         
         <h3>Client Information</h3>
+        <p>Every connected user has client information automatically assigned and managed by the WebSim platform:</p>
+        
         <pre><code>// Access current client's information
-let clientId = room.party.client.id;
-let username = room.party.client.username;
+let clientId = room.party.client.id;         // Unique identifier for this client
+let username = room.party.client.username;   // Username from WebSim account
 console.log(clientId, username);</code></pre>
         
         <div class="note">
-            <p>Client information is automatically handled by the library. You can use:</p>
+            <p><strong>Important:</strong> Client information is automatically handled by the library. You should use:</p>
             <ul>
-                <li><code>client.id</code> for client-specific logic</li>
-                <li><code>client.username</code> for display purposes</li>
+                <li><code>client.id</code> for client-specific logic, networking, and identifying the current user in the room</li>
+                <li><code>client.username</code> for display purposes and user interface elements</li>
             </ul>
+            <p>Users are already authenticated with WebSim - there's no need to implement additional authentication or request usernames.</p>
         </div>
         
         <h3>Connected Peers</h3>
+        <p>The <code>peers</code> object contains information about all connected clients, including the current client:</p>
+        
         <pre><code>// Access all connected peers (including yourself)
 for (const clientId in room.party.peers) {
     const { username } = room.party.peers[clientId];
-    console.log(username);
+    console.log(`Client ID: ${clientId}, Username: ${username}`);
+    
+    // Check if this is the current client
+    const isCurrentClient = clientId === room.party.client.id;
+    if (isCurrentClient) {
+        console.log("This is the current client");
+    }
 }
 
-// Subscribe to peer changes
+// Subscribe to peer changes (connections and disconnections)
 room.party.subscribe((peers) => {
+    console.log("Peer list updated!");
+    console.log(`Total peers: ${Object.keys(peers).length}`);
+    
     for (const clientId in peers) {
         const { username } = peers[clientId];
-        console.log(username);
+        console.log(`Connected peer: ${username}`);
     }
 });</code></pre>
+
+        <div class="example">
+            <p><strong>Example:</strong> Creating a real-time user list</p>
+            <pre><code>// Create a function to update the UI with the current user list
+function updateUserList(peers) {
+    const userList = document.getElementById('user-list');
+    userList.innerHTML = '';
+    
+    for (const clientId in peers) {
+        const { username } = peers[clientId];
+        const listItem = document.createElement('li');
+        
+        // Highlight the current user
+        if (clientId === room.party.client.id) {
+            listItem.innerHTML = `<strong>${username} (You)</strong>`;
+        } else {
+            listItem.textContent = username;
+        }
+        
+        userList.appendChild(listItem);
+    }
+}
+
+// Initial user list update
+updateUserList(room.party.peers);
+
+// Keep the user list updated
+room.party.subscribe(updateUserList);</code></pre>
+        </div>
         
         <h3>React Integration</h3>
+        <p>For React applications, WebSim provides clean integration with React 18's external store sync:</p>
+        
         <pre><code>// React 18 integration with useSyncExternalStore
-const peers = React.useSyncExternalStore(
-    room.party.subscribe,
-    () => room.party.peers,
-);</code></pre>
-    </section>
+import { useSyncExternalStore } from 'react';
+
+function PeerList() {
+    // Get the always up-to-date peers object
+    const peers = React.useSyncExternalStore(
+        room.party.subscribe,
+        () => room.party.peers,
+    );
     
+    return (
+        <div>
+            <h2>Connected Users ({Object.keys(peers).length})</h2>
+            <ul>
+                {Object.entries(peers).map(([clientId, peer]) => (
+                    <li key={clientId}>
+                        {peer.username}
+                        {clientId === room.party.client.id ? ' (You)' : ''}
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}</code></pre>
+
+        <p>This approach ensures that your React components always reflect the current state of connected peers without manual re-rendering or state management.</p>
+    </section>
+
     <section id="events" class="section">
         <h2>Events</h2>
         
+        <p>Events are ephemeral messages that are exchanged between clients in real-time but are not persisted after delivery. They're ideal for:</p>
+        <ul>
+            <li>Real-time position updates in games</li>
+            <li>Cursor positions in collaborative editors</li>
+            <li>Transient notifications and status updates</li>
+            <li>Any data that doesn't need to be stored permanently</li>
+        </ul>
+        
+        <h3>Event Structure</h3>
+        <p>Events have the following structure:</p>
+        <pre><code>{
+  type: string;       // The event type (required)
+  echo?: boolean;     // Whether the sender receives the event (default: true)
+  clientId: string;   // Automatically added: ID of the sending client
+  username: string;   // Automatically added: Username of the sending client
+  // ... additional custom data
+}</code></pre>
+        
         <h3>Sending Events</h3>
-        <p>Events are ephemeral messages sent between connected clients:</p>
+        <p>Use the <code>send</code> method to broadcast events to all connected clients:</p>
         
         <pre><code>// Send a custom event
 room.send({
-    type: "yourCustomEventType",
-    echo: true,  // Whether the sender receives the event (default: true)
+    type: "playerMove",     // Custom event type
+    echo: true,             // Whether the sender receives the event (default: true)
     // Additional event data
-    newX: 100,
-    newY: 100,
-    message: "Hello, world!",
+    position: { x: 100, y: 200 },
+    direction: "right",
+    speed: 5,
+    timestamp: Date.now(),
 });</code></pre>
         
+        <div class="example">
+            <p><strong>Example:</strong> Sending mouse position updates</p>
+            <pre><code>// Track mouse movement and broadcast to other clients
+document.addEventListener('mousemove', (event) => {
+    // Throttle updates to avoid flooding the connection
+    if (!lastUpdateTime || Date.now() - lastUpdateTime > 50) {
+        room.send({
+            type: "mouseMove",
+            x: event.clientX,
+            y: event.clientY,
+            echo: false,  // Don't send back to the sender
+        });
+        lastUpdateTime = Date.now();
+    }
+});</code></pre>
+        </div>
+        
         <h3>Handling Events</h3>
+        <p>Use the <code>onmessage</code> event handler to process incoming events:</p>
+        
         <pre><code>// Handle incoming events
 room.onmessage = (event) => {
     const data = event.data;
+    
     switch (data.type) {
         // Built-in events
         case "connected":
-            console.log(`Client ${data.clientId}, ${data.username}`);
+            console.log(`New client connected: ${data.username} (${data.clientId})`);
+            // Initialize the new client with current state
             break;
+            
         case "disconnected":
-            console.log(`Client ${data.clientId}, ${data.username}`);
+            console.log(`Client disconnected: ${data.username} (${data.clientId})`);
+            // Clean up any resources associated with the client
             break;
             
         // Custom events
-        case "yourCustomEventType":
-            console.log(`New position: (${data.newX}, ${data.newY})`);
-            console.log(`Message: ${data.message}`);
-            console.log(`Event sent by client: ${data.clientId}`);
-            console.log(`Event sent by username: ${data.username}`);
-            // Handle your custom event
+        case "playerMove":
+            // Update the player's position in the game
+            updatePlayerPosition(data.clientId, data.position);
+            console.log(`Player ${data.username} moved to (${data.position.x}, ${data.position.y})`);
+            console.log(`Direction: ${data.direction}, Speed: ${data.speed}`);
+            break;
+            
+        case "chatMessage":
+            // Display the chat message
+            addChatMessage(data.username, data.message, data.timestamp);
             break;
             
         default:
-            console.log("Received event:", data);
+            console.log("Received unknown event:", data);
     }
 };</code></pre>
-    </section>
-    
-    <section id="records" class="section">
-        <h2>Persistent Records</h2>
-        
-        <p>Unlike events, records are persistent and remain available even after clients disconnect.</p>
-        
-        <h3>Creating Records</h3>
-        <pre><code>// Create a new record
-let post = await room.collection('post').create({
-    message: "Hello, world!",
-});</code></pre>
-        
+
         <div class="note">
-            <p>Records automatically include:</p>
+            <p><strong>Best practices for event handling:</strong></p>
             <ul>
-                <li><code>id</code> - Unique identifier</li>
-                <li><code>username</code> - Creator's username</li>
-                <li><code>created_at</code> - UTC timestamp</li>
+                <li>Always check the event type before processing</li>
+                <li>Consider using separate handler functions for complex event types</li>
+                <li>Remember that events include <code>clientId</code> and <code>username</code> automatically</li>
+                <li>For high-frequency events (like position updates), consider throttling to reduce network traffic</li>
             </ul>
         </div>
         
-        <h3>Retrieving Records</h3>
-        <pre><code>// Get all records of type "post"
-let posts = room.collection('post').getList();
+        <div class="example">
+            <p><strong>Example:</strong> Complete chat application with events</p>
+            <pre><code>// DOM elements
+const messageInput = document.getElementById('message-input');
+const sendButton = document.getElementById('send-button');
+const chatLog = document.getElementById('chat-log');
 
-// Filter records by field value
-let filteredPosts = room.collection('post').filter({ parent_id: post.id }).getList();
+// Send chat message
+function sendChatMessage() {
+    const message = messageInput.value.trim();
+    if (message) {
+        room.send({
+            type: "chatMessage",
+            message: message,
+            timestamp: Date.now()
+        });
+        messageInput.value = '';
+    }
+}
 
-// Get only top-level posts
-let topPosts = room.collection('post').filter({ parent_id: null }).getList();</code></pre>
+// Event listeners
+sendButton.addEventListener('click', sendChatMessage);
+messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendChatMessage();
+});
+
+// Handle incoming messages
+room.onmessage = (event) => {
+    const data = event.data;
+    
+    if (data.type === "chatMessage") {
+        // Create message element
+        const messageEl = document.createElement('div');
+        messageEl.classList.add('message');
+        
+        // Format timestamp
+        const time = new Date(data.timestamp).toLocaleTimeString();
+        
+        // Set message content
+        messageEl.innerHTML = `
+            <span class="time">[${time}]</span>
+            <span class="username">${data.username}:</span>
+            <span class="content">${data.message}</span>
+        `;
+        
+        // Add to chat log
+        chatLog.appendChild(messageEl);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    }
+};</code></pre>
+        </div>
+    </section>
+
+    <section id="records" class="section">
+        <h2>Persistent Records</h2>
+        
+        <p>Unlike ephemeral events, records are persistent and remain available even after clients disconnect. They're suitable for:</p>
+        <ul>
+            <li>Chat messages that need to persist across sessions</li>
+            <li>User-generated content like posts, comments, or annotations</li>
+            <li>Game state that needs to be preserved</li>
+            <li>Any data that should be retrievable for new users joining later</li>
+        </ul>
+        
+        <h3>Record Structure</h3>
+        <p>Records have the following structure:</p>
+        <pre><code>{
+  type: string;       // Collection type (handled by the collection name)
+  id: string;         // Unique identifier (automatically generated)
+  username: string;   // Creator's username (automatically added)
+  created_at: string; // UTC timestamp (automatically added)
+  // ... additional custom data
+}</code></pre>
+        
+        <h3>Creating Records</h3>
+        <p>Use the <code>create</code> method on a collection to add new records:</p>
+        
+        <pre><code>// Create a new post record
+let post = await room.collection('post').create({
+    title: "My First Post",
+    message: "Hello, persistent world!",
+    tags: ["introduction", "hello"],
+    visibility: "public",
+});
+
+console.log(`Created post with ID: ${post.id}`);
+console.log(`Created by: ${post.username}`);
+console.log(`Created at: ${post.created_at}`);</code></pre>
         
         <div class="note">
-            <p>Note: <code>getList()</code> always returns records sorted from newest to oldest.</p>
+            <p><strong>Important:</strong> Records automatically include:</p>
+            <ul>
+                <li><code>id</code> - Unique identifier (UUID format)</li>
+                <li><code>username</code> - Creator's username (from WebSim account)</li>
+                <li><code>created_at</code> - UTC timestamp of creation</li>
+            </ul>
+            <p>You don't need to provide these fields when creating records; they're automatically handled by the system.</p>
         </div>
         
+        <h3>Retrieving Records</h3>
+        <p>Records can be retrieved from collections with various query options:</p>
+        
+        <pre><code>// Get all records from the 'post' collection
+let allPosts = room.collection('post').getList();
+
+// Filter records by a specific field value
+let userPosts = room.collection('post').filter({ username: "specificUsername" }).getList();
+
+// Get only top-level posts (those without a parent)
+let topPosts = room.collection('post').filter({ parent_id: null }).getList();
+
+// Combined filtering (AND logic)
+let filteredPosts = room.collection('post')
+    .filter({ 
+        visibility: "public",
+        category: "announcements" 
+    })
+    .getList();</code></pre>
+        
+        <div class="note">
+            <p><strong>Important notes about retrieving records:</strong></p>
+            <ul>
+                <li><code>getList()</code> always returns records sorted from newest to oldest</li>
+                <li>Use <code>.reverse()</code> on the result if you need oldest-to-newest order</li>
+                <li>The result may be an empty array while data is loading</li>
+                <li>Filtering only supports exact matching (equality) on field values</li>
+                <li>Multiple filter conditions are combined with AND logic</li>
+            </ul>
+        </div>
+        
+        <h3>Schema Changes and Versioning</h3>
+        <p>When making significant changes to your record structure, use versioned collection names:</p>
+        
+        <pre><code>// Original collection
+let posts = room.collection('post').getList();
+
+// When changing the schema, increment the version number
+let postsV2 = room.collection('post_v2').getList();</code></pre>
+        
+        <p>This approach ensures backward compatibility and prevents data corruption when changing record schemas.</p>
+        
         <h3>Record Relationships</h3>
-        <pre><code>// Create related records
-let post = await room.collection('post').create({
-    message: "Hello, world!",
+        <p>You can create relationships between records by referencing IDs:</p>
+        
+        <pre><code>// Create a parent post
+let mainPost = await room.collection('post').create({
+    message: "Main post content",
 });
 
-// Create an upvote related to the post
-let upvote = await room.collection('upvote').create({
-    post_id: post.id,
+// Create a comment related to the post
+let comment = await room.collection('comment').create({
+    post_id: mainPost.id,
+    message: "This is a comment on the main post",
 });
 
-// Query all upvotes on a specific post
-let upvotes = room.collection('upvote').filter({ post_id: post.id }).getList();</code></pre>
+// Create a nested reply
+let reply = await room.collection('comment').create({
+    post_id: mainPost.id,
+    parent_id: comment.id,
+    message: "This is a reply to the comment",
+});
+
+// Query the entire comment thread for a post
+let allComments = room.collection('comment')
+    .filter({ post_id: mainPost.id })
+    .getList();
+
+// Query only direct comments (not replies)
+let directComments = room.collection('comment')
+    .filter({ 
+        post_id: mainPost.id,
+        parent_id: null 
+    })
+    .getList();
+
+// Query replies to a specific comment
+let commentReplies = room.collection('comment')
+    .filter({ parent_id: comment.id })
+    .getList();</code></pre>
+        
+        <div class="example">
+            <p><strong>Example:</strong> Implementing a like/upvote system</p>
+            <pre><code>// Check if the current user has liked a post
+function hasUserLikedPost(postId, username) {
+    const likes = room.collection('like')
+        .filter({ 
+            post_id: postId,
+            username: username
+        })
+        .getList();
+    
+    return likes.length > 0;
+}
+
+// Toggle like status for a post
+async function toggleLike(postId) {
+    const currentUsername = room.party.client.username;
+    const existingLikes = room.collection('like')
+        .filter({ 
+            post_id: postId,
+            username: currentUsername
+        })
+        .getList();
+    
+    if (existingLikes.length > 0) {
+        // User already liked the post, so remove the like
+        await room.collection('like').delete(existingLikes[0].id);
+    } else {
+        // User hasn't liked the post, so add a like
+        await room.collection('like').create({
+            post_id: postId
+        });
+    }
+}
+
+// Count total likes for a post
+function getPostLikeCount(postId) {
+    const likes = room.collection('like')
+        .filter({ post_id: postId })
+        .getList();
+    
+    return likes.length;
+}</code></pre>
+        </div>
         
         <h3>Updating & Deleting Records</h3>
+        <p>Users can only update or delete records they created:</p>
+        
         <pre><code>// Update a record (can only update your own records)
 await room.collection('post').update(post.id, {
-    message: "Hello, world! (updated)",
+    message: "Updated content",
+    edited: true,
+    last_edited_at: new Date().toISOString()
 });
 
 // Delete a record (can only delete your own records)
 await room.collection('post').delete(post.id);</code></pre>
         
+        <div class="note">
+            <p><strong>Permissions:</strong> The system automatically enforces that users can only update or delete records they created. Attempting to modify another user's record will fail.</p>
+        </div>
+        
+        <p>Best practice is to handle these operations with proper error handling:</p>
+        
+        <pre><code>try {
+    await room.collection('post').update(post.id, {
+        message: "Updated content"
+    });
+    console.log("Post updated successfully");
+} catch (error) {
+    console.error("Failed to update post:", error);
+    // Display appropriate message to user
+}</code></pre>
+        
         <h3>Subscribing to Record Changes</h3>
+        <p>Use subscriptions to keep your UI in sync with real-time record changes:</p>
+        
         <pre><code>// Subscribe to all posts
 room.collection('post').subscribe(function (posts) {
-    console.log(posts);
+    console.log("Posts updated:", posts.length);
+    updatePostsUI(posts);
 });
 
 // Subscribe to filtered posts
-room.collection('post').filter({ parent_id: null }).subscribe(function (topLevelPosts) {
-    console.log(topLevelPosts);
+room.collection('post')
+    .filter({ category: "announcements" })
+    .subscribe(function (announcements) {
+        console.log("Announcements updated:", announcements.length);
+        updateAnnouncementsUI(announcements);
+    });
+
+// Store the unsubscribe function when needed
+const unsubscribe = room.collection('post').subscribe(function (posts) {
+    // Update UI with posts
 });
 
-// Unsubscribe when needed
-const unsubscribe = room.collection('post').subscribe(function (posts) {
-    console.log(posts);
-});
+// Later, when no longer needed (e.g., component unmount)
 unsubscribe();</code></pre>
         
+        <div class="note">
+            <p><strong>Subscription best practices:</strong></p>
+            <ul>
+                <li>Subscriptions fire immediately with the current data and then on every change</li>
+                <li>Updates are received whenever any client creates, updates, or deletes a record</li>
+                <li>Avoid expensive operations in subscription callbacks as they may run frequently</li>
+                <li>Remember to unsubscribe when the subscription is no longer needed (e.g., when navigating away)</li>
+            </ul>
+        </div>
+        
         <h3>React Integration</h3>
-        <pre><code>// React 18 integration
-const messages = React.useSyncExternalStore(
-    room.collection('message').subscribe,
-    room.collection('message').getList
-);
+        <p>For React applications, WebSim provides clean integration with React 18's <code>useSyncExternalStore</code>:</p>
+        
+        <pre><code>import { useSyncExternalStore } from 'react';
 
-// With filtering
-const topMessages = React.useSyncExternalStore(
-    room.collection('message').filter({ parent_id: null }).subscribe,
-    room.collection('message').filter({ parent_id: null }).getList
-);</code></pre>
+// Simple usage for all messages
+function MessageList() {
+    const messages = React.useSyncExternalStore(
+        room.collection('message').subscribe,
+        room.collection('message').getList
+    );
+    
+    return (
+        <div className="message-list">
+            {messages.map(message => (
+                <div key={message.id} className="message">
+                    <strong>{message.username}:</strong> {message.content}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// With filtering - important to use consistent filter objects
+function ChannelMessages({ channelId }) {
+    // Create a memoized filter to ensure referential equality
+    const filter = React.useMemo(
+        () => ({ channel_id: channelId }), 
+        [channelId]
+    );
+    
+    // Use the filter with useSyncExternalStore
+    const messages = React.useSyncExternalStore(
+        React.useCallback(
+            callback => room.collection('message').filter(filter).subscribe(callback),
+            [filter]
+        ),
+        React.useCallback(
+            () => room.collection('message').filter(filter).getList(),
+            [filter]
+        )
+    );
+    
+    return (
+        <div className="channel-messages">
+            {messages.map(message => (
+                <div key={message.id} className="message">
+                    <strong>{message.username}:</strong> {message.content}
+                </div>
+            ))}
+        </div>
+    );
+}</code></pre>
         
         <div class="note">
-            <p>For React 18 integration, include these script tags:</p>
+            <p><strong>Note for React integration:</strong> Remember to include these script tags for React 18:</p>
             <pre><code>&lt;script src="https://unpkg.com/react@18/umd/react.development.js"&gt;&lt;/script&gt;
 &lt;script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"&gt;&lt;/script&gt;
 &lt;script src="https://unpkg.com/@babel/standalone/babel.min.js"&gt;&lt;/script&gt;</code></pre>
         </div>
         
         <h3>Finding Project Creator</h3>
+        <p>Access the username of the project creator to implement owner-specific functionality:</p>
+        
         <pre><code>// Get the username of the project creator
-let creatorUsername = (await window.websim.getCreatedBy()).username;</code></pre>
-    </section>
+let creatorUsername = (await window.websim.getCreatedBy()).username;
+
+// Check if current user is the project creator
+const isCreator = room.party.client.username === creatorUsername;
+
+if (isCreator) {
+    // Enable creator-only controls or functionality
+    showAdminControls();
+}</code></pre>
+        
+        <div class="example">
+            <p><strong>Example:</strong> Complete comment system with records</p>
+            <pre><code>// DOM elements
+const commentForm = document.getElementById('comment-form');
+const commentInput = document.getElementById('comment-input');
+const commentsContainer = document.getElementById('comments-container');
+
+// Submit a new comment
+commentForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const content = commentInput.value.trim();
     
+    if (content) {
+        try {
+            await room.collection('comment').create({
+                content: content,
+                parent_id: null  // Top-level comment
+            });
+            
+            commentInput.value = '';
+        } catch (error) {
+            console.error('Error posting comment:', error);
+            alert('Failed to post comment. Please try again.');
+        }
+    }
+});
+
+// Render a single comment with its replies
+function renderComment(comment, replies) {
+    const commentEl = document.createElement('div');
+    commentEl.classList.add('comment');
+    commentEl.dataset.id = comment.id;
+    
+    const isCurrentUser = comment.username === room.party.client.username;
+    
+    commentEl.innerHTML = `
+        <div class="comment-header">
+            <img class="avatar" src="https://images.websim.ai/avatar/${comment.username}" alt="${comment.username}">
+            <span class="username">${comment.username}</span>
+            <span class="timestamp">${new Date(comment.created_at).toLocaleString()}</span>
+        </div>
+        <div class="comment-content">${comment.content}</div>
+        <div class="comment-actions">
+            <button class="reply-button">Reply</button>
+            ${isCurrentUser ? '<button class="delete-button">Delete</button>' : ''}
+        </div>
+        <div class="reply-form" style="display: none;">
+            <textarea placeholder="Write a reply..."></textarea>
+            <button class="submit-reply">Submit</button>
+        </div>
+        <div class="replies"></div>
+    `;
+    
+    // Add event listeners for reply and delete
+    const replyButton = commentEl.querySelector('.reply-button');
+    const replyForm = commentEl.querySelector('.reply-form');
+    const replySubmit = commentEl.querySelector('.submit-reply');
+    const replyTextarea = commentEl.querySelector('.reply-form textarea');
+    const repliesContainer = commentEl.querySelector('.replies');
+    
+    // Toggle reply form
+    replyButton.addEventListener('click', () => {
+        replyForm.style.display = replyForm.style.display === 'none' ? 'block' : 'none';
+        if (replyForm.style.display === 'block') {
+            replyTextarea.focus();
+        }
+    });
+    
+    // Submit reply
+    replySubmit.addEventListener('click', async () => {
+        const content = replyTextarea.value.trim();
+        if (content) {
+            try {
+                await room.collection('comment').create({
+                    content: content,
+                    parent_id: comment.id
+                });
+                
+                replyTextarea.value = '';
+                replyForm.style.display = 'none';
+            } catch (error) {
+                console.error('Error posting reply:', error);
+                alert('Failed to post reply. Please try again.');
+            }
+        }
+    });
+    
+    // Handle delete if it's the user's comment
+    if (isCurrentUser) {
+        const deleteButton = commentEl.querySelector('.delete-button');
+        deleteButton.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to delete this comment?')) {
+                try {
+                    await room.collection('comment').delete(comment.id);
+                } catch (error) {
+                    console.error('Error deleting comment:', error);
+                    alert('Failed to delete comment. Please try again.');
+                }
+            }
+        });
+    }
+    
+    // Render replies if any exist
+    if (replies && replies.length > 0) {
+        replies.forEach(reply => {
+            const replyEl = renderComment(reply, []); // Assuming no nested replies for simplicity
+            repliesContainer.appendChild(replyEl);
+        });
+    }
+    
+    return commentEl;
+}
+
+// Render all comments and set up live updates
+function initializeComments() {
+    // Subscribe to comment changes
+    room.collection('comment').subscribe(comments => {
+        // Group comments by parent_id
+        const commentMap = {};
+        const topLevelComments = [];
+        
+        comments.forEach(comment => {
+            if (!comment.parent_id) {
+                topLevelComments.push(comment);
+            } else {
+                if (!commentMap[comment.parent_id]) {
+                    commentMap[comment.parent_id] = [];
+                }
+                commentMap[comment.parent_id].push(comment);
+            }
+        });
+        
+        // Clear the container
+        commentsContainer.innerHTML = '';
+        
+        // Render top-level comments with their replies
+        topLevelComments.forEach(comment => {
+            const replies = commentMap[comment.id] || [];
+            const commentEl = renderComment(comment, replies);
+            commentsContainer.appendChild(commentEl);
+        });
+    });
+}
+
+// Initialize the comment system
+initializeComments();</code></pre>
+        </div>
+    </section>
+
     <section id="file-upload" class="section">
         <h2>File Upload</h2>
         
-        <p>WebSim provides a simple way to upload files:</p>
+        <p>WebSim provides a straightforward API for uploading files to secure cloud storage:</p>
         
-        <pre><code>try {
-    // Upload file to S3 and get the URL
-    const url = await websim.upload(file);
-    console.log("File uploaded:", url);
-} catch (error) {
-    console.error('Error uploading file:', error);
+        <pre><code>// Upload a file to WebSim's storage
+async function uploadFile(file) {
+    try {
+        // Upload file and get the URL
+        const url = await websim.upload(file);
+        console.log("File uploaded successfully:", url);
+        
+        // The URL can be used directly in your application
+        return url;
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        throw error; // Re-throw to handle in the calling function
+    }
+}</code></pre>
+        
+        <div class="note">
+            <p><strong>Supported file types:</strong> WebSim supports common file types including images (PNG, JPEG, GIF, WebP), audio (MP3, WAV, OGG), documents (PDF), and more.</p>
+            <p><strong>File size limits:</strong> There are reasonable limits on file sizes to ensure performance. For extremely large files, consider alternative solutions.</p>
+        </div>
+        
+        <div class="example">
+            <p><strong>Example:</strong> Complete image upload with preview</p>
+            <pre><code>// DOM elements
+const fileInput = document.getElementById('file-input');
+const uploadButton = document.getElementById('upload-button');
+const previewContainer = document.getElementById('preview-container');
+const uploadStatus = document.getElementById('upload-status');
+
+// Handle file selection and preview
+fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (file) {
+        // Create and display image preview
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            previewContainer.innerHTML = `
+                <div class="preview">
+                    <img src="${e.target.result}" alt="Preview">
+                    <p>${file.name} (${(file.size / 1024).toFixed(2)} KB)</p>
+                </div>
+            `;
+        };
+        reader.readAsDataURL(file);
+        uploadButton.disabled = false;
+    } else {
+        previewContainer.innerHTML = '';
+        uploadButton.disabled = true;
+    }
+});
+
+// Handle file upload
+uploadButton.addEventListener('click', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    
+    uploadStatus.textContent = 'Uploading...';
+    uploadButton.disabled = true;
+    
+    try {
+        // Upload the file to WebSim
+        const url = await websim.upload(file);
+        
+        // Save the URL to a record for persistence
+        await room.collection('uploads').create({
+            filename: file.name,
+            filesize: file.size,
+            filetype: file.type,
+            url: url,
+            description: 'User uploaded file'
+        });
+        
+        uploadStatus.textContent = 'Upload successful!';
+        setTimeout(() => {
+            uploadStatus.textContent = '';
+            previewContainer.innerHTML = '';
+            fileInput.value = '';
+        }, 3000);
+    } catch (error) {
+        console.error('Upload failed:', error);
+        uploadStatus.textContent = `Upload failed: ${error.message}`;
+        uploadButton.disabled = false;
+    }
+});</code></pre>
+        </div>
+        
+        <h3>Handling Uploaded Files</h3>
+        <p>After uploading, you can use the returned URL in various ways:</p>
+        
+        <pre><code>// Display an uploaded image
+function displayImage(imageUrl) {
+    const imgElement = document.createElement('img');
+    imgElement.src = imageUrl;
+    imgElement.alt = 'Uploaded image';
+    document.getElementById('gallery').appendChild(imgElement);
+}
+
+// Link to an uploaded document
+function createDocumentLink(documentUrl, filename) {
+    const linkElement = document.createElement('a');
+    linkElement.href = documentUrl;
+    linkElement.textContent = filename;
+    linkElement.target = '_blank';
+    document.getElementById('documents').appendChild(linkElement);
+}
+
+// Embed an uploaded audio file
+function createAudioPlayer(audioUrl) {
+    const audioElement = document.createElement('audio');
+    audioElement.controls = true;
+    
+    const sourceElement = document.createElement('source');
+    sourceElement.src = audioUrl;
+    
+    audioElement.appendChild(sourceElement);
+    document.getElementById('audio-players').appendChild(audioElement);
 }</code></pre>
     </section>
-    
+
     <section id="llm" class="section">
         <h2>LLM Integration</h2>
         
-        <h3>Basic AI Chat</h3>
-        <pre><code>let conversationHistory = [];
-
-// Add user message
-const newMessage = {
-    role: "user",
-    content: "What is two plus two?",
-};
-conversationHistory.push(newMessage);
-
-// Only keep recent messages
-conversationHistory = conversationHistory.slice(-10);
-
-// Get AI response
-const completion = await websim.chat.completions.create({
-    messages: [
-        {
-            role: "system",
-            content: "You are a friendly assistant who speaks in rhyming verse.",
-        }, // system message is optional
-        ...conversationHistory,
-    ],
-});
-
-const response = completion.content;
-// Add response to history
-conversationHistory.push(completion);</code></pre>
+        <p>WebSim provides powerful AI capabilities through language model integration, allowing you to build intelligent features directly into your applications.</p>
         
-        <h3>JSON Output</h3>
-        <pre><code>const completion = await websim.chat.completions.create({
-    messages: [
-        {
-            role: "system",
-            content: `Combine the following concepts into a single, coherent idea.
-Respond directly with JSON, following this JSON schema, and no other text.
+        <h3>Basic AI Chat</h3>
+        <p>Implement conversational AI interactions with proper history management:</p>
+        
+        <pre><code>// Maintain conversation history
+let conversationHistory = [];
+
+// Add a user message to the conversation
+function addUserMessage(content) {
+    const userMessage = {
+        role: "user",
+        content: content
+    };
+    conversationHistory.push(userMessage);
+    
+    // Keep conversation history at a reasonable length
+    // to prevent token limits and improve performance
+    conversationHistory = conversationHistory.slice(-10);
+    
+    return userMessage;
+}
+
+// Get AI response based on the conversation history
+async function getAIResponse(systemPrompt = "You are a helpful assistant.") {
+    try {
+        // Call the language model with appropriate context
+        const completion = await websim.chat.completions.create({
+            messages: [
+                {
+                    role: "system",
+                    content: systemPrompt
+                },
+                ...conversationHistory
+            ],
+        });
+        
+        // Extract and save the response
+        const aiMessage = completion;
+        conversationHistory.push(aiMessage);
+        
+        return aiMessage.content;
+    } catch (error) {
+        console.error("Error getting AI response:", error);
+        throw error;
+    }
+}</code></pre>
+        
+        <div class="example">
+            <p><strong>Example:</strong> Building a complete AI chatbot interface</p>
+            <pre><code>// DOM elements
+const chatContainer = document.getElementById('chat-container');
+const userInput = document.getElementById('user-input');
+const sendButton = document.getElementById('send-button');
+const typingIndicator = document.getElementById('typing-indicator');
+
+// Conversation state
+let conversationHistory = [];
+let isProcessing = false;
+
+// Add a message to the chat UI
+function addMessageToUI(role, content) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', role);
+    
+    const avatar = document.createElement('div');
+    avatar.classList.add('avatar');
+    
+    // Set appropriate avatar based on role
+    if (role === 'user') {
+        avatar.innerHTML = `<img src="https://images.websim.ai/avatar/${room.party.client.username}" alt="User">`;
+    } else {
+        avatar.innerHTML = `<svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"></path></svg>`;
+    }
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('content');
+    contentDiv.innerHTML = marked.parse(content); // Using marked.js for Markdown support
+    
+    messageDiv.appendChild(avatar);
+    messageDiv.appendChild(contentDiv);
+    chatContainer.appendChild(messageDiv);
+    
+    // Scroll to bottom
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// Send user message and get AI response
+async function sendMessage() {
+    if (isProcessing) return;
+    
+    const userMessage = userInput.value.trim();
+    if (!userMessage) return;
+    
+    // Clear input
+    userInput.value = '';
+    
+    // Add user message to UI
+    addMessageToUI('user', userMessage);
+    
+    // Add to conversation history
+    conversationHistory.push({
+        role: "user",
+        content: userMessage
+    });
+    
+    // Keep history at a reasonable length
+    conversationHistory = conversationHistory.slice(-10);
+    
+    // Show typing indicator
+    typingIndicator.style.display = 'flex';
+    isProcessing = true;
+    
+    try {
+        // Get AI response
+        const completion = await websim.chat.completions.create({
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a friendly, knowledgeable assistant. Provide helpful, concise responses."
+                },
+                ...conversationHistory
+            ],
+        });
+        
+        // Hide typing indicator
+        typingIndicator.style.display = 'none';
+        
+        // Add AI response to UI
+        addMessageToUI('assistant', completion.content);
+        
+        // Add to conversation history
+        conversationHistory.push(completion);
+    } catch (error) {
+        console.error("Error getting AI response:", error);
+        typingIndicator.style.display = 'none';
+        addMessageToUI('system', "Sorry, I encountered an error. Please try again.");
+    } finally {
+        isProcessing = false;
+    }
+}
+
+// Event listeners
+sendButton.addEventListener('click', sendMessage);
+userInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+});</code></pre>
+        </div>
+        
+        <h3>Structured JSON Responses</h3>
+        <p>Request and parse structured information from the language model:</p>
+        
+        <pre><code>// Request structured JSON from the language model
+async function getStructuredResponse(prompt) {
+    try {
+        const completion = await websim.chat.completions.create({
+            messages: [
+                {
+                    role: "system",
+                    content: `Respond directly with JSON, following this JSON schema, and no other text.
 {
   concept: string;
   emoji: string;
-}
-`,
-        },
-        {
-            role: "user",
-            content: [
-                { type: "text", text: "eggs + fire" },
-            ],
-        },
-    ],
-    json: true,
-});
-
-const result = JSON.parse(completion.content);
-let concept = result.concept;
-let emoji = result.emoji;</code></pre>
-        
-        <h3>Image Input + JSON Output</h3>
-        <pre><code>const completion = await websim.chat.completions.create({
-    messages: [
-        {
-            role: "user",
-            content: [
-                {
-                    type: "text",
-                    text: `Determine if the image is a natural photograph of an animal.
-Respond directly with JSON, following this JSON schema, and no other text.
-{
-  isPhotograph: boolean;
-  isAnimal: boolean;
-  isInNature: boolean;
+  description: string;
+  examples: string[];
 }`,
                 },
                 {
-                    type: "image_url",
-                    image_url: { url: imageDataUrl },
+                    role: "user",
+                    content: [
+                        { type: "text", text: prompt },
+                    ],
                 },
             ],
-        },
-    ],
-    json: true,
+            json: true, // Request JSON output
+        });
+        
+        // Parse the JSON response
+        const result = JSON.parse(completion.content);
+        return result;
+    } catch (error) {
+        console.error("Error getting structured response:", error);
+        throw error;
+    }
+}</code></pre>
+        
+        <div class="example">
+            <p><strong>Example:</strong> Generating a creative concept with structured output</p>
+            <pre><code>// Generate a creative concept based on keywords
+async function generateConcept(keywords) {
+    try {
+        const result = await getStructuredResponse(`Generate a creative concept based on these keywords: ${keywords}`);
+        
+        // Update UI with the generated concept
+        document.getElementById('concept-title').textContent = result.concept;
+        document.getElementById('concept-emoji').textContent = result.emoji;
+        document.getElementById('concept-description').textContent = result.description;
+        
+        // Add examples
+        const examplesList = document.getElementById('concept-examples');
+        examplesList.innerHTML = '';
+        
+        result.examples.forEach(example => {
+            const li = document.createElement('li');
+            li.textContent = example;
+            examplesList.appendChild(li);
+        });
+        
+        return result;
+    } catch (error) {
+        console.error("Failed to generate concept:", error);
+        document.getElementById('concept-error').textContent = "Failed to generate concept. Please try again.";
+    }
+}</code></pre>
+        </div>
+        
+        <h3>Image Analysis & Computer Vision</h3>
+        <p>Analyze images with powerful computer vision capabilities:</p>
+        
+        <pre><code>// Analyze an image and get structured information
+async function analyzeImage(imageDataUrl, prompt) {
+    try {
+        const completion = await websim.chat.completions.create({
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "text",
+                            text: prompt || `Analyze this image and provide detailed information about what you see.
+Respond with JSON in this format:
+{
+  mainSubject: string;
+  description: string;
+  colors: string[];
+  objects: string[];
+  setting: string;
+  mood: string;
+}`,
+                        },
+                        {
+                            type: "image_url",
+                            image_url: { url: imageDataUrl },
+                        },
+                    ],
+                },
+            ],
+            json: true,
+        });
+        
+        // Parse and return the structured analysis
+        return JSON.parse(completion.content);
+    } catch (error) {
+        console.error("Error analyzing image:", error);
+        throw error;
+    }
+}</code></pre>
+        
+        <div class="example">
+            <p><strong>Example:</strong> Image uploader with automatic analysis</p>
+            <pre><code>// Image uploader with analysis
+const imageInput = document.getElementById('image-input');
+const analyzeButton = document.getElementById('analyze-button');
+const imagePreview = document.getElementById('image-preview');
+const analysisResults = document.getElementById('analysis-results');
+const loadingIndicator = document.getElementById('loading-indicator');
+
+// Preview the selected image
+imageInput.addEventListener('change', () => {
+    const file = imageInput.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        imagePreview.innerHTML = `<img src="${e.target.result}" alt="Selected image">`;
+        analyzeButton.disabled = false;
+    };
+    reader.readAsDataURL(file);
 });
 
-let result = JSON.parse(completion.content);
-let isPhotograph = result.isPhotograph;
-let isAnimal = result.isAnimal;
-let isInNature = result.isInNature;</code></pre>
+// Analyze the image when the button is clicked
+analyzeButton.addEventListener('click', async () => {
+    const file = imageInput.files[0];
+    if (!file) return;
+    
+    // Show loading indicator
+    loadingIndicator.style.display = 'block';
+    analyzeButton.disabled = true;
+    
+    try {
+        // Convert the image to a data URL for analysis
+        const imageDataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = e => resolve(e.target.result);
+            reader.readAsDataURL(file);
+        });
+        
+        // Analyze the image
+        const analysis = await analyzeImage(imageDataUrl);
+        
+        // Display the results
+        analysisResults.innerHTML = `
+            <h3>Image Analysis</h3>
+            <p><strong>Main Subject:</strong> ${analysis.mainSubject}</p>
+            <p><strong>Description:</strong> ${analysis.description}</p>
+            <p><strong>Setting:</strong> ${analysis.setting}</p>
+            <p><strong>Mood:</strong> ${analysis.mood}</p>
+            
+            <div class="analysis-section">
+                <h4>Colors</h4>
+                <ul>
+                    ${analysis.colors.map(color => `<li>${color}</li>`).join('')}
+                </ul>
+            </div>
+            
+            <div class="analysis-section">
+                <h4>Objects</h4>
+                <ul>
+                    ${analysis.objects.map(object => `<li>${object}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    } catch (error) {
+        console.error("Analysis failed:", error);
+        analysisResults.innerHTML = `<p class="error">Analysis failed: ${error.message}</p>`;
+    } finally {
+        loadingIndicator.style.display = 'none';
+        analyzeButton.disabled = false;
+    }
+});</code></pre>
+        </div>
         
         <h3>AI Image Generation</h3>
-        <pre><code>// Generate an image with default 1:1 aspect ratio
-const result = await websim.imageGen({
-    prompt: "A crayon child's drawing of a turtle",
+        <p>Create AI-generated images with customizable parameters:</p>
+        
+        <pre><code>// Generate an image with default parameters (1:1 aspect ratio)
+async function generateBasicImage(prompt) {
+    try {
+        const result = await websim.imageGen({
+            prompt: prompt,
+        });
+        return result.url; // URL to the generated image
+    } catch (error) {
+        console.error("Image generation failed:", error);
+        throw error;
+    }
+}
+
+// Generate an image with specific aspect ratio
+async function generateImageWithAspectRatio(prompt, aspectRatio) {
+    try {
+        const result = await websim.imageGen({
+            prompt: prompt,
+            aspect_ratio: aspectRatio, // "1:1", "16:9", "21:9", "3:2", etc.
+        });
+        return result.url;
+    } catch (error) {
+        console.error("Image generation failed:", error);
+        throw error;
+    }
+}
+
+// Generate an image with specific dimensions
+async function generateImageWithDimensions(prompt, width, height) {
+    try {
+        const result = await websim.imageGen({
+            prompt: prompt,
+            width: width,   // Custom width in pixels
+            height: height, // Custom height in pixels
+        });
+        return result.url;
+    } catch (error) {
+        console.error("Image generation failed:", error);
+        throw error;
+    }
+}
+
+// Generate variations with a consistent seed
+async function generateImageVariations(prompt, count = 4) {
+    const variations = [];
+    try {
+        // Generate multiple variations with different seeds
+        for (let i = 0; i < count; i++) {
+            const result = await websim.imageGen({
+                prompt: prompt,
+                seed: i, // Different seed for each variation
+            });
+            variations.push(result.url);
+        }
+        return variations;
+    } catch (error) {
+        console.error("Image variation generation failed:", error);
+        throw error;
+    }
+}</code></pre>
+        
+        <div class="example">
+            <p><strong>Example:</strong> Complete image generation interface</p>
+            <pre><code>// DOM elements
+const promptInput = document.getElementById('prompt-input');
+const aspectRatioSelect = document.getElementById('aspect-ratio');
+const generateButton = document.getElementById('generate-button');
+const generationStatus = document.getElementById('generation-status');
+const resultsContainer = document.getElementById('results-container');
+
+// Available aspect ratios
+const aspectRatios = [
+    { value: "1:1", label: "Square (1:1)" },
+    { value: "16:9", label: "Widescreen (16:9)" },
+    { value: "9:16", label: "Portrait (9:16)" },
+    { value: "4:3", label: "Standard (4:3)" },
+    { value: "3:2", label: "Photo (3:2)" },
+];
+
+// Populate aspect ratio dropdown
+aspectRatios.forEach(ratio => {
+    const option = document.createElement('option');
+    option.value = ratio.value;
+    option.textContent = ratio.label;
+    aspectRatioSelect.appendChild(option);
 });
 
-// Generate with specific aspect ratio
-const wideResult = await websim.imageGen({
-    prompt: "A beautiful sunset over a calm ocean",
-    aspect_ratio: "16:9",
-});
-
-// Generate with specific dimensions
-const customResult = await websim.imageGen({
-    prompt: "A beautiful sunset over a calm ocean",
-    width: 1024,
-    height: 768,
-});
-
-// Use a seed for consistent variations
-const seededResult = await websim.imageGen({
-    prompt: "A beautiful sunset over a calm ocean",
-    seed: 4,
-});
-
-console.log(result.url); // URL to the generated image</code></pre>
-    </section>
+// Generate image when button is clicked
+generateButton.addEventListener('click', async () => {
+    const prompt = promptInput.value.trim();
+    if (!prompt) {
+        alert('Please enter a prompt for the image generation.');
+        return;
+    }
     
+    // Show generation status
+    generationStatus.textContent = 'Generating image...';
+    generationStatus.style.display = 'block';
+    generateButton.disabled = true;
+    
+    try {
+        // Generate the image
+        const result = await websim.imageGen({
+            prompt: prompt,
+            aspect_ratio: aspectRatioSelect.value,
+        });
+        
+        // Create image element
+        const imageContainer = document.createElement('div');
+        imageContainer.classList.add('generated-image');
+        
+        imageContainer.innerHTML = `
+            <img src="${result.url}" alt="Generated: ${prompt}">
+            <div class="image-info">
+                <p class="prompt">${prompt}</p>
+                <p class="aspect-ratio">Aspect Ratio: ${aspectRatioSelect.value}</p>
+                <button class="save-button">Save to Collection</button>
+                <button class="regenerate-button">Regenerate</button>
+            </div>
+        `;
+        
+        // Add to results
+        resultsContainer.insertBefore(imageContainer, resultsContainer.firstChild);
+        
+        // Add event listeners to buttons
+        const saveButton = imageContainer.querySelector('.save-button');
+        saveButton.addEventListener('click', async () => {
+            // Save image information to a record
+            await room.collection('generated_images').create({
+                prompt: prompt,
+                aspect_ratio: aspectRatioSelect.value,
+                image_url: result.url,
+            });
+            saveButton.textContent = 'Saved!';
+            saveButton.disabled = true;
+        });
+        
+        const regenerateButton = imageContainer.querySelector('.regenerate-button');
+        regenerateButton.addEventListener('click', async () => {
+            regenerateButton.textContent = 'Regenerating...';
+            regenerateButton.disabled = true;
+            
+            try {
+                // Generate a new variation
+                const newResult = await websim.imageGen({
+                    prompt: prompt,
+                    aspect_ratio: aspectRatioSelect.value,
+                    seed: Math.floor(Math.random() * 1000), // Random seed for variation
+                });
+                
+                // Update the image
+                const imgElement = imageContainer.querySelector('img');
+                imgElement.src = newResult.url;
+                
+                regenerateButton.textContent = 'Regenerate';
+                regenerateButton.disabled = false;
+            } catch (error) {
+                console.error('Regeneration failed:', error);
+                regenerateButton.textContent = 'Failed';
+                setTimeout(() => {
+                    regenerateButton.textContent = 'Regenerate';
+                    regenerateButton.disabled = false;
+                }, 3000);
+            }
+        });
+        
+        // Clear status
+        generationStatus.style.display = 'none';
+        generateButton.disabled = false;
+    } catch (error) {
+        console.error('Image generation failed:', error);
+        generationStatus.textContent = `Generation failed: ${error.message}`;
+        setTimeout(() => {
+            generationStatus.textContent = '';
+            generateButton.disabled = false;
+        }, 3000);
+    }
+});</code></pre>
+        </div>
+    </section>
+
     <section id="api" class="section">
         <h2>API Access</h2>
         
-        <p>WebSim provides API access to various data:</p>
+        <p>WebSim provides comprehensive API access to platform data, allowing you to integrate with user information, projects, sites, and more.</p>
         
         <h3>User Information</h3>
-        <pre><code>// Get current user
-const user = await window.websim.getUser();
+        <p>Access information about the current user and other platform users:</p>
+        
+        <pre><code>// Get current user information
+async function getCurrentUser() {
+    try {
+        const user = await window.websim.getUser();
+        return user; // { id, username, avatar_url, etc. }
+    } catch (error) {
+        console.error("Error getting current user:", error);
+        return null;
+    }
+}
 
-// Access user info
-const { id, username, avatar_url } = user;
+// Get information about a specific user by username
+async function getUserByUsername(username) {
+    try {
+        const response = await fetch(`/api/v1/users/${username}`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.user;
+    } catch (error) {
+        console.error(`Error getting user ${username}:`, error);
+        throw error;
+    }
+}
 
-// Get user following
-const response = await fetch(`/api/v1/users/${username}/following`);
-const body = await response.json();
-for (const {follow} of body.following.data) {
-    // Process following data
+// Get users that a user is following
+async function getUserFollowing(username) {
+    try {
+        const response = await fetch(`/api/v1/users/${username}/following`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.following.data.map(item => item.follow);
+    } catch (error) {
+        console.error(`Error getting ${username}'s following:`, error);
+        throw error;
+    }
+}
+
+// Get a user's followers
+async function getUserFollowers(username) {
+    try {
+        const response = await fetch(`/api/v1/users/${username}/followers`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.followers.data.map(item => item.follow);
+    } catch (error) {
+        console.error(`Error getting ${username}'s followers:`, error);
+        throw error;
+    }
 }</code></pre>
         
-        <h3>Common URLs</h3>
+        <h3>URL & Resource Reference</h3>
+        <p>Common URL patterns for WebSim resources:</p>
+        
         <table>
             <tr>
-                <th>Type</th>
+                <th>Resource Type</th>
                 <th>URL Pattern</th>
+                <th>Description</th>
             </tr>
             <tr>
                 <td>Site Links</td>
                 <td><code>https://websim.ai/c/${site_id}</code></td>
+                <td>Link to a published WebSim site</td>
             </tr>
             <tr>
                 <td>Project Links</td>
                 <td><code>https://websim.ai/p/${project_id}</code></td>
+                <td>Link to a WebSim project</td>
             </tr>
             <tr>
-                <td>Site Images</td>
+                <td>Site Images (thumbnail)</td>
                 <td><code>https://images.websim.ai/v1/site/${site.id}/600</code></td>
+                <td>Thumbnail image for a site (600px wide)</td>
+            </tr>
+            <tr>
+                <td>Site Images (large)</td>
+                <td><code>https://images.websim.ai/v1/site/${site.id}/1200</code></td>
+                <td>Larger image for a site (1200px wide)</td>
             </tr>
             <tr>
                 <td>User Avatars</td>
                 <td><code>https://images.websim.ai/avatar/${user.username}</code></td>
+                <td>User profile avatar image</td>
             </tr>
             <tr>
                 <td>User Profiles</td>
                 <td><code>https://websim.ai/@${user.username}</code></td>
+                <td>Link to user profile page</td>
             </tr>
         </table>
         
+        <div class="note">
+            <p><strong>Best practice:</strong> When displaying usernames, include both the avatar and the username with the @ prefix, and make both link to the user's profile page.</p>
+        </div>
+        
         <h3>Project Information</h3>
-        <pre><code>// Get current project
-const project = await window.websim.getCurrentProject();
-const { id, title, description } = project;</code></pre>
-    </section>
+        <p>Access details about the current project and other projects:</p>
+        
+        <pre><code>// Get information about the current project
+async function getCurrentProject() {
+    try {
+        const project = await window.websim.getCurrentProject();
+        return project; // { id, title, description }
+    } catch (error) {
+        console.error("Error getting current project:", error);
+        return null;
+    }
+}
+
+// Get the creator of the current project
+async function getProjectCreator() {
+    try {
+        const creator = await window.websim.getCreatedBy();
+        return creator; // { username, ... }
+    } catch (error) {
+        console.error("Error getting project creator:", error);
+        return null;
+    }
+}
+
+// Get details about a specific project
+async function getProjectDetails(projectId) {
+    try {
+        const response = await fetch(`/api/v1/projects/${projectId}`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return {
+            project: data.project,
+            revision: data.project_revision,
+            site: data.site
+        };
+    } catch (error) {
+        console.error(`Error getting project ${projectId}:`, error);
+        throw error;
+    }
+}
+
+// Get a user's projects
+async function getUserProjects(username, options = {}) {
+    try {
+        // Build query parameters
+        const params = new URLSearchParams();
+        if (options.first) params.append('first', options.first);
+        if (options.hasOwnProperty('posted')) params.append('posted', options.posted);
+        if (options.sortBy) params.append('sort_by', options.sortBy);
+        
+        const response = await fetch(`/api/v1/users/${username}/projects?${params}`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.projects.data;
+    } catch (error) {
+        console.error(`Error getting ${username}'s projects:`, error);
+        throw error;
+    }
+}</code></pre>
+        
+        <div class="example">
+            <p><strong>Example:</strong> Building a user profile page</p>
+            <pre><code>// DOM elements
+const profileContainer = document.getElementById('profile-container');
+const projectsContainer = document.getElementById('projects-container');
+const statsContainer = document.getElementById('stats-container');
+const loadingIndicator = document.getElementById('loading-indicator');
+
+// Load a user's profile
+async function loadUserProfile(username) {
+    loadingIndicator.style.display = 'block';
+    profileContainer.innerHTML = '';
+    projectsContainer.innerHTML = '';
+    statsContainer.innerHTML = '';
     
+    try {
+        // Get user information
+        const user = await getUserByUsername(username);
+        
+        // Get user stats
+        const statsResponse = await fetch(`/api/v1/users/${username}/stats`);
+        const statsData = await statsResponse.json();
+        const stats = statsData.stats;
+        
+        // Get user projects (posted only by default)
+        const projects = await getUserProjects(username, { posted: true, sortBy: 'updated_at' });
+        
+        // Get followers count
+        const followersResponse = await fetch(`/api/v1/users/${username}/followers?count=true`);
+        const followersData = await followersResponse.json();
+        const followersCount = followersData.followers.meta.count || 0;
+        
+        // Get following count
+        const followingResponse = await fetch(`/api/v1/users/${username}/following?count=true`);
+        const followingData = await followingResponse.json();
+        const followingCount = followingData.following.meta.count || 0;
+        
+        // Render user profile
+        profileContainer.innerHTML = `
+            <div class="profile-header">
+                <img class="profile-avatar" src="https://images.websim.ai/avatar/${user.username}" alt="${user.username}">
+                <div class="profile-info">
+                    <h1 class="profile-username">@${user.username}</h1>
+                    <p class="profile-description">${user.description || 'No description provided'}</p>
+                    
+                    <div class="profile-links">
+                        ${user.twitter ? `<a href="https://twitter.com/${user.twitter}" target="_blank" class="social-link">Twitter</a>` : ''}
+                        ${user.discord_username ? `<span class="social-link">Discord: ${user.discord_username}</span>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Render user stats
+        statsContainer.innerHTML = `
+            <div class="stats-card">
+                <div class="stat-item">
+                    <span class="stat-value">${projects.length}</span>
+                    <span class="stat-label">Projects</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${followersCount}</span>
+                    <span class="stat-label">Followers</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${followingCount}</span>
+                    <span class="stat-label">Following</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${stats.total_views.toLocaleString()}</span>
+                    <span class="stat-label">Views</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${stats.total_likes.toLocaleString()}</span>
+                    <span class="stat-label">Likes</span>
+                </div>
+            </div>
+        `;
+        
+        // Check if the current user is following this user
+        const currentUser = await getCurrentUser();
+        if (currentUser && currentUser.username !== username) {
+            const followBtn = document.createElement('button');
+            followBtn.classList.add('follow-button');
+            
+            // Check if already following
+            const isFollowing = user.followed_at !== null;
+            
+            followBtn.textContent = isFollowing ? 'Following' : 'Follow';
+            followBtn.classList.toggle('following', isFollowing);
+            
+            // Add follow/unfollow functionality
+            followBtn.addEventListener('click', async () => {
+                try {
+                    if (isFollowing) {
+                        // Unfollow
+                        await fetch(`/api/v1/users/${username}/follow`, {
+                            method: 'DELETE'
+                        });
+                        followBtn.textContent = 'Follow';
+                        followBtn.classList.remove('following');
+                    } else {
+                        // Follow
+                        await fetch(`/api/v1/users/${username}/follow`, {
+                            method: 'POST'
+                        });
+                        followBtn.textContent = 'Following';
+                        followBtn.classList.add('following');
+                    }
+                } catch (error) {
+                    console.error('Failed to update follow status:', error);
+                    alert('Failed to update follow status. Please try again.');
+                }
+            });
+            
+            profileContainer.querySelector('.profile-info').appendChild(followBtn);
+        }
+        
+        // Render user projects
+        if (projects.length === 0) {
+            projectsContainer.innerHTML = '<p class="no-projects">This user has no posted projects yet.</p>';
+        } else {
+            const projectsGrid = document.createElement('div');
+            projectsGrid.classList.add('projects-grid');
+            
+            projects.forEach(projectItem => {
+                const { project, project_revision, site } = projectItem;
+                
+                const projectCard = document.createElement('div');
+                projectCard.classList.add('project-card');
+                
+                // Only show thumbnail if the project has a site
+                const thumbnailHtml = site ? 
+                    `<img class="project-thumbnail" src="https://images.websim.ai/v1/site/${site.id}/600" alt="${project.title}">` :
+                    `<div class="project-thumbnail placeholder">No Preview</div>`;
+                
+                projectCard.innerHTML = `
+                    <a href="https://websim.ai/p/${project.id}" class="project-link">
+                        <div class="thumbnail-container">
+                            ${thumbnailHtml}
+                        </div>
+                        <div class="project-details">
+                            <h3 class="project-title">${project.title || 'Untitled Project'}</h3>
+                            <p class="project-stats">
+                                <span title="Views"><i class="icon-eye"></i> ${project.stats.views}</span>
+                                <span title="Likes"><i class="icon-heart"></i> ${project.stats.likes}</span>
+                                <span title="Comments"><i class="icon-comment"></i> ${project.stats.comments}</span>
+                            </p>
+                            <p class="project-date">Updated ${new Date(project.updated_at).toLocaleDateString()}</p>
+                        </div>
+                    </a>
+                `;
+                
+                projectsGrid.appendChild(projectCard);
+            });
+            
+            projectsContainer.appendChild(projectsGrid);
+        }
+    } catch (error) {
+        console.error(`Error loading profile for ${username}:`, error);
+        profileContainer.innerHTML = `<p class="error">Failed to load profile for @${username}. Please try again.</p>`;
+    } finally {
+        loadingIndicator.style.display = 'none';
+    }
+}
+
+// Load the profile of the requested user
+const urlParams = new URLSearchParams(window.location.search);
+const username = urlParams.get('username');
+
+if (username) {
+    loadUserProfile(username);
+} else {
+    // If no username specified, try to load the current user's profile
+    getCurrentUser().then(user => {
+        if (user) {
+            loadUserProfile(user.username);
+        } else {
+            profileContainer.innerHTML = '<p class="error">No user specified and not logged in.</p>';
+            loadingIndicator.style.display = 'none';
+        }
+    });
+}</code></pre>
+        </div>
+        
+        <h3>Feed & Trending</h3>
+        <p>Access trending content and personalized feeds:</p>
+        
+        <pre><code>// Get trending sites
+async function getTrendingProjects(options = {}) {
+    try {
+        // Build query parameters
+        const params = new URLSearchParams();
+        if (options.range) params.append('range', options.range); // "day", "week", "month", "all"
+        if (options.first) params.append('first', options.first);
+        
+        const response = await fetch(`/api/v1/feed/trending?${params}`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.feed.data;
+    } catch (error) {
+        console.error('Error getting trending projects:', error);
+        throw error;
+    }
+}
+
+// Search for projects
+async function searchProjects(query, sort = 'best') {
+    try {
+        const response = await fetch(`/api/v1/feed/search/${sort}/${encodeURIComponent(query)}`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.feed.data;
+    } catch (error) {
+        console.error(`Error searching for "${query}":`, error);
+        throw error;
+    }
+}
+
+// Get personalized feed for current user
+async function getPersonalizedFeed(options = {}) {
+    try {
+        // Build query parameters
+        const params = new URLSearchParams();
+        if (options.feed) params.append('feed', options.feed); // "top", "hot", "multiplayer", "engaging"
+        if (options.range) params.append('range', options.range); // "day", "week", "month", "all"
+        if (options.first) params.append('first', options.first);
+        
+        const response = await fetch(`/api/v1/user/feed?${params}`);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return data.feed.data;
+    } catch (error) {
+        console.error('Error getting personalized feed:', error);
+        throw error;
+    }
+}</code></pre>
+    </section>
+
     <script>
         // Add smooth scrolling for navigation links
         document.querySelectorAll('nav a').forEach(anchor => {
